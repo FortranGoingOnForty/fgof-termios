@@ -33,6 +33,7 @@ Implemented today:
 - real raw mode, cbreak mode, and echo transitions applied through the captured snapshot
 - idempotent restore semantics for guard lifecycle
 - terminal-size queries from an explicit fd or default stdin
+- tracked `fpm` examples for restore-first and terminal-size flows
 - smoke-test coverage with CI wiring
 
 Still to implement:
@@ -74,17 +75,29 @@ Current public procedures:
 
 ```fortran
 program demo_termios
-  use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode, restore_guard
-  use fgof_termios_types, only : termios_guard
+  use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode, get_terminal_size, restore_guard
+  use fgof_termios_types, only : FGOF_TERMIOS_ERR_NONE, terminal_size, termios_guard
   implicit none
 
   type(termios_guard) :: guard
+  type(terminal_size) :: size_info
 
   call bind_guard(guard)
+  if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) stop 1
+
+  size_info = get_terminal_size(guard%fd)
   call enter_raw_mode(guard)
   call disable_echo(guard)
   call restore_guard(guard)
+  if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) stop 1
 end program demo_termios
+```
+
+Tracked example programs:
+
+```bash
+fpm run --example restore_first
+fpm run --example terminal_size_query
 ```
 
 ## Build And Test
@@ -106,6 +119,12 @@ That is the baseline verification command locally and in CI.
 - focused on reusable terminal mode primitives, not a full TUI toolkit
 - the first release should solve safe raw, cbreak, and echo transitions well before it grows broader terminal helpers
 - future `fgof-keys` should be able to depend on this package without inheriting PTY or line-editing policy
+
+## Composition
+
+- `fgof-pty` should own PTY lifecycle and pass the relevant tty fd into `bind_guard` or `get_terminal_size`
+- `fgof-lineedit` should own buffer, history, and completion state while `fgof-termios` owns mode transitions
+- future `fgof-keys` should decode raw input bytes on top of this package instead of re-implementing terminal mode policy
 
 ## License
 
