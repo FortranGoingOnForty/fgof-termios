@@ -132,6 +132,11 @@ contains
       return
     end if
 
+    if (.not. guard%restore_needed) then
+      call clear_guard_error(guard)
+      return
+    end if
+
     call posix_restore_state(guard%fd, guard%captured_state, restore_status, restore_message)
     if (restore_status == TERMIOS_POSIX_RESTORE_FAILED) then
       call set_guard_error(guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, restore_message)
