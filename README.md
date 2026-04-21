@@ -74,6 +74,8 @@ Current public procedures:
 
 If `bind_guard()` is called on a guard that still owes a restore, it restores the previous tty first and only switches to the new fd if that restore succeeds.
 
+`restore_guard()` is a no-op when no restore is pending, so callers can safely use it in straightforward cleanup paths.
+
 ## Quick Start
 
 ```fortran
