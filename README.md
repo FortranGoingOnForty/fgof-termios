@@ -32,6 +32,7 @@ Implemented today:
 - POSIX-backed tty validation and original terminal-state capture on bind
 - real raw mode, cbreak mode, and echo transitions applied through the captured snapshot
 - idempotent restore semantics for guard lifecycle
+- safe rebinding that restores the previous tty before switching fds
 - terminal-size queries from an explicit fd or default stdin
 - tracked `fpm` examples for restore-first and terminal-size flows
 - smoke-test coverage with CI wiring
@@ -70,6 +71,8 @@ Current public procedures:
 - `restore_guard`
 
 `get_terminal_size()` uses file descriptor `0` by default. Pass an explicit fd when your app is reading size from a PTY or a non-stdin terminal.
+
+If `bind_guard()` is called on a guard that still owes a restore, it restores the previous tty first and only switches to the new fd if that restore succeeds.
 
 ## Quick Start
 
