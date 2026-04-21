@@ -1,13 +1,22 @@
 module fgof_termios
-  use fgof_termios_types, only : terminal_size, termios_guard
+  use fgof_termios_types, only : &
+    FGOF_TERMIOS_ERR_INVALID_FD, &
+    FGOF_TERMIOS_ERR_NONE, &
+    FGOF_TERMIOS_ERR_UNBOUND_GUARD, &
+    FGOF_TERMIOS_MODE_CBREAK, &
+    FGOF_TERMIOS_MODE_NONE, &
+    FGOF_TERMIOS_MODE_RAW, &
+    terminal_size, &
+    termios_guard
   implicit none
   private
 
   public :: bind_guard
-  public :: request_raw_mode
-  public :: request_noecho
+  public :: enter_cbreak_mode
+  public :: enter_raw_mode
+  public :: disable_echo
+  public :: enable_echo
   public :: restore_guard
-  public :: terminal_size_of
 
 contains
 
@@ -21,40 +30,102 @@ contains
     else
       guard%fd = 0
     end if
+
+    if (guard%fd < 0) then
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_INVALID_FD, "guard fd must be nonnegative")
+      return
+    end if
+
     guard%bound = .true.
+    call clear_guard_error(guard)
   end subroutine bind_guard
 
-  subroutine request_raw_mode(guard)
+  subroutine enter_raw_mode(guard)
     type(termios_guard), intent(inout) :: guard
 
-    if (.not. guard%bound) then
-      call bind_guard(guard)
-    end if
-    guard%raw_requested = .true.
-  end subroutine request_raw_mode
+    if (.not. ensure_bound(guard)) return
+    guard%snapshot_captured = .true.
+    guard%restore_needed = .true.
+    guard%active_mode = FGOF_TERMIOS_MODE_RAW
+    call clear_guard_error(guard)
+  end subroutine enter_raw_mode
 
-  subroutine request_noecho(guard)
+  subroutine enter_cbreak_mode(guard)
     type(termios_guard), intent(inout) :: guard
 
-    if (.not. guard%bound) then
-      call bind_guard(guard)
-    end if
-    guard%noecho_requested = .true.
-  end subroutine request_noecho
+    if (.not. ensure_bound(guard)) return
+    guard%snapshot_captured = .true.
+    guard%restore_needed = .true.
+    guard%active_mode = FGOF_TERMIOS_MODE_CBREAK
+    call clear_guard_error(guard)
+  end subroutine enter_cbreak_mode
+
+  subroutine disable_echo(guard)
+    type(termios_guard), intent(inout) :: guard
+
+    if (.not. ensure_bound(guard)) return
+    guard%snapshot_captured = .true.
+    guard%restore_needed = .true.
+    guard%echo_disabled = .true.
+    call clear_guard_error(guard)
+  end subroutine disable_echo
+
+  subroutine enable_echo(guard)
+    type(termios_guard), intent(inout) :: guard
+
+    if (.not. ensure_bound(guard)) return
+    guard%snapshot_captured = .true.
+    guard%restore_needed = .true.
+    guard%echo_disabled = .false.
+    call clear_guard_error(guard)
+  end subroutine enable_echo
 
   subroutine restore_guard(guard)
     type(termios_guard), intent(inout) :: guard
 
-    guard%raw_requested = .false.
-    guard%noecho_requested = .false.
+    if (.not. guard%bound) then
+      call clear_guard_error(guard)
+      return
+    end if
+
+    guard%active_mode = FGOF_TERMIOS_MODE_NONE
+    guard%snapshot_captured = .false.
+    guard%restore_needed = .false.
+    guard%echo_disabled = .false.
+    call clear_guard_error(guard)
   end subroutine restore_guard
 
-  function terminal_size_of(rows, columns) result(size)
-    integer, intent(in) :: rows
-    integer, intent(in) :: columns
-    type(terminal_size) :: size
+  logical function ensure_bound(guard) result(is_ready)
+    type(termios_guard), intent(inout) :: guard
 
-    size%rows = rows
-    size%columns = columns
-  end function terminal_size_of
+    if (.not. guard%bound) then
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_UNBOUND_GUARD, "bind_guard must be called before mode changes")
+      is_ready = .false.
+      return
+    end if
+
+    is_ready = .true.
+  end function ensure_bound
+
+  subroutine clear_guard_error(guard)
+    type(termios_guard), intent(inout) :: guard
+
+    guard%last_error_code = FGOF_TERMIOS_ERR_NONE
+    if (allocated(guard%last_error_message)) then
+      deallocate(guard%last_error_message)
+    end if
+    guard%last_error_message = ""
+  end subroutine clear_guard_error
+
+  subroutine set_guard_error(guard, code, message)
+    type(termios_guard), intent(inout) :: guard
+    integer, intent(in) :: code
+    character(len=*), intent(in) :: message
+
+    guard%last_error_code = code
+    if (allocated(guard%last_error_message)) then
+      deallocate(guard%last_error_message)
+    end if
+    guard%last_error_message = message
+  end subroutine set_guard_error
 end module fgof_termios
