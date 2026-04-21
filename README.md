@@ -80,7 +80,7 @@ If `bind_guard()` is called on a guard that still owes a restore, it restores th
 
 ```fortran
 program demo_termios
-  use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode, get_terminal_size, restore_guard
+  use fgof_termios, only : bind_guard, disable_echo, enter_cbreak_mode, get_terminal_size, restore_guard
   use fgof_termios_types, only : FGOF_TERMIOS_ERR_NONE, terminal_size, termios_guard
   implicit none
 
@@ -91,7 +91,7 @@ program demo_termios
   if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) stop 1
 
   size_info = get_terminal_size(guard%fd)
-  call enter_raw_mode(guard)
+  call enter_cbreak_mode(guard)
   call disable_echo(guard)
   call restore_guard(guard)
   if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) stop 1
