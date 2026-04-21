@@ -1,5 +1,5 @@
 module fgof_termios_types
-  use, intrinsic :: iso_c_binding, only : c_signed_char
+  use, intrinsic :: iso_c_binding, only : c_long_long, c_signed_char
   implicit none
   private
 
@@ -40,8 +40,12 @@ module fgof_termios_types
     logical :: bound = .false.
     logical :: tty = .false.
     logical :: snapshot_captured = .false.
+    logical :: identity_captured = .false.
     logical :: restore_needed = .false.
+    logical :: echo_overridden = .false.
     logical :: echo_disabled = .false.
+    integer(c_long_long) :: bound_device_id = 0_c_long_long
+    integer(c_long_long) :: bound_inode_id = 0_c_long_long
     integer(c_signed_char), allocatable :: captured_state(:)
     integer :: last_error_code = FGOF_TERMIOS_ERR_NONE
     character(len=:), allocatable :: last_error_message

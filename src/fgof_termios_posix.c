@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -18,12 +19,69 @@ size_t fgof_termios_state_size(void) {
 }
 
 static void fgof_termios_make_raw(struct termios *state) {
-    state->c_iflag &= (tcflag_t) ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    state->c_iflag &= (tcflag_t) ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
     state->c_oflag &= (tcflag_t) ~OPOST;
+    state->c_cflag &= (tcflag_t) ~(CSIZE | PARENB);
     state->c_cflag |= (tcflag_t) CS8;
-    state->c_lflag &= (tcflag_t) ~(ECHO | ICANON | IEXTEN | ISIG);
+    state->c_lflag &= (tcflag_t) ~(ECHO | ECHONL | ICANON | IEXTEN | ISIG);
     state->c_cc[VMIN] = 1;
     state->c_cc[VTIME] = 0;
+}
+
+static void fgof_termios_apply_echo_policy(struct termios *state,
+                                           const struct termios *original_state,
+                                           int mode,
+                                           int echo_policy) {
+    if (echo_policy == 1) {
+        state->c_lflag &= (tcflag_t) ~(ECHO | ECHOE | ECHOK | ECHONL);
+        return;
+    }
+
+    if (echo_policy == 2) {
+        state->c_lflag |= (tcflag_t) ECHO;
+        if (original_state->c_lflag & ECHOE) {
+            state->c_lflag |= (tcflag_t) ECHOE;
+        } else {
+            state->c_lflag &= (tcflag_t) ~ECHOE;
+        }
+        if (original_state->c_lflag & ECHOK) {
+            state->c_lflag |= (tcflag_t) ECHOK;
+        } else {
+            state->c_lflag &= (tcflag_t) ~ECHOK;
+        }
+        if (original_state->c_lflag & ECHONL) {
+            state->c_lflag |= (tcflag_t) ECHONL;
+        } else {
+            state->c_lflag &= (tcflag_t) ~ECHONL;
+        }
+        return;
+    }
+
+    if (mode == 1) {
+        state->c_lflag &= (tcflag_t) ~(ECHO | ECHOE | ECHOK | ECHONL);
+        return;
+    }
+
+    if (original_state->c_lflag & ECHO) {
+        state->c_lflag |= (tcflag_t) ECHO;
+    } else {
+        state->c_lflag &= (tcflag_t) ~ECHO;
+    }
+    if (original_state->c_lflag & ECHOE) {
+        state->c_lflag |= (tcflag_t) ECHOE;
+    } else {
+        state->c_lflag &= (tcflag_t) ~ECHOE;
+    }
+    if (original_state->c_lflag & ECHOK) {
+        state->c_lflag |= (tcflag_t) ECHOK;
+    } else {
+        state->c_lflag &= (tcflag_t) ~ECHOK;
+    }
+    if (original_state->c_lflag & ECHONL) {
+        state->c_lflag |= (tcflag_t) ECHONL;
+    } else {
+        state->c_lflag &= (tcflag_t) ~ECHONL;
+    }
 }
 
 static int fgof_termios_load_state(const signed char *buffer,
@@ -65,13 +123,15 @@ int fgof_termios_apply_state(int fd,
                              const signed char *snapshot,
                              size_t snapshot_len,
                              int mode,
-                             int echo_disabled,
+                             int echo_policy,
                              int *sys_errno) {
+    struct termios original_state;
     struct termios state;
 
     if (fgof_termios_load_state(snapshot, snapshot_len, &state, sys_errno) != 0) {
         return -1;
     }
+    original_state = state;
 
     switch (mode) {
     case 1:
@@ -86,9 +146,7 @@ int fgof_termios_apply_state(int fd,
         break;
     }
 
-    if (echo_disabled) {
-        state.c_lflag &= (tcflag_t) ~(ECHO | ECHOE | ECHOK | ECHONL);
-    }
+    fgof_termios_apply_echo_policy(&state, &original_state, mode, echo_policy);
 
     if (tcsetattr(fd, TCSANOW, &state) != 0) {
         *sys_errno = errno;
@@ -133,6 +191,25 @@ int fgof_termios_get_terminal_size(int fd,
 
     *rows = (int) size.ws_row;
     *columns = (int) size.ws_col;
+    return 0;
+}
+
+int fgof_termios_get_fd_identity(int fd,
+                                 long long *device_id,
+                                 long long *inode_id,
+                                 int *sys_errno) {
+    struct stat info;
+
+    *device_id = 0;
+    *inode_id = 0;
+    *sys_errno = 0;
+    if (fstat(fd, &info) != 0) {
+        *sys_errno = errno;
+        return -1;
+    }
+
+    *device_id = (long long) info.st_dev;
+    *inode_id = (long long) info.st_ino;
     return 0;
 }
 
@@ -259,6 +336,49 @@ int fgof_termios_test_set_size(int fd, int rows, int columns, int *sys_errno) {
     size.ws_row = (unsigned short) rows;
     size.ws_col = (unsigned short) columns;
     if (ioctl(fd, TIOCSWINSZ, &size) != 0) {
+        *sys_errno = errno;
+        return -1;
+    }
+
+    return 0;
+}
+
+int fgof_termios_test_raw_profile_ok(int fd, int *matches, int *sys_errno) {
+    struct termios state;
+
+    *matches = 0;
+    *sys_errno = 0;
+    if (tcgetattr(fd, &state) != 0) {
+        *sys_errno = errno;
+        return -1;
+    }
+
+    if ((state.c_iflag & (IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON)) != 0) {
+        return 0;
+    }
+    if ((state.c_oflag & OPOST) != 0) {
+        return 0;
+    }
+    if ((state.c_lflag & (ECHO | ECHONL | ICANON | ISIG | IEXTEN)) != 0) {
+        return 0;
+    }
+    if ((state.c_cflag & PARENB) != 0) {
+        return 0;
+    }
+    if ((state.c_cflag & CSIZE) != CS8) {
+        return 0;
+    }
+    if (state.c_cc[VMIN] != 1 || state.c_cc[VTIME] != 0) {
+        return 0;
+    }
+
+    *matches = 1;
+    return 0;
+}
+
+int fgof_termios_test_dup_fd(int source_fd, int target_fd, int *sys_errno) {
+    *sys_errno = 0;
+    if (dup2(source_fd, target_fd) < 0) {
         *sys_errno = errno;
         return -1;
     }

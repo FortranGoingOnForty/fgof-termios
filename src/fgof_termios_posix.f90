@@ -1,5 +1,5 @@
 module fgof_termios_posix
-  use, intrinsic :: iso_c_binding, only : c_int, c_signed_char, c_size_t
+  use, intrinsic :: iso_c_binding, only : c_int, c_long_long, c_signed_char, c_size_t
   implicit none
   private
 
@@ -12,6 +12,7 @@ module fgof_termios_posix
 
   public :: posix_apply_state
   public :: posix_capture_state
+  public :: posix_get_fd_identity
   public :: posix_get_terminal_size
   public :: posix_restore_state
 
@@ -33,13 +34,13 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_capture_state_c
 
-    integer(c_int) function fgof_termios_apply_state_c(fd, snapshot, snapshot_len, mode, echo_disabled, sys_errno) bind(C, name="fgof_termios_apply_state")
+    integer(c_int) function fgof_termios_apply_state_c(fd, snapshot, snapshot_len, mode, echo_policy, sys_errno) bind(C, name="fgof_termios_apply_state")
       import :: c_int, c_signed_char, c_size_t
       integer(c_int), value :: fd
       integer(c_signed_char), intent(in) :: snapshot(*)
       integer(c_size_t), value :: snapshot_len
       integer(c_int), value :: mode
-      integer(c_int), value :: echo_disabled
+      integer(c_int), value :: echo_policy
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_apply_state_c
 
@@ -58,6 +59,14 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: columns
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_get_terminal_size_c
+
+    integer(c_int) function fgof_termios_get_fd_identity_c(fd, device_id, inode_id, sys_errno) bind(C, name="fgof_termios_get_fd_identity")
+      import :: c_int, c_long_long
+      integer(c_int), value :: fd
+      integer(c_long_long), intent(out) :: device_id
+      integer(c_long_long), intent(out) :: inode_id
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_get_fd_identity_c
   end interface
 
 contains
@@ -104,11 +113,11 @@ contains
     end if
   end subroutine posix_capture_state
 
-  subroutine posix_apply_state(fd, state_bytes, mode, echo_disabled, status_code, status_message)
+  subroutine posix_apply_state(fd, state_bytes, mode, echo_policy, status_code, status_message)
     integer, intent(in) :: fd
     integer(c_signed_char), intent(in) :: state_bytes(:)
     integer, intent(in) :: mode
-    logical, intent(in) :: echo_disabled
+    integer, intent(in) :: echo_policy
     integer, intent(out) :: status_code
     character(len=:), allocatable, intent(out) :: status_message
     integer(c_int) :: apply_status
@@ -123,7 +132,7 @@ contains
       state_bytes, &
       int(size(state_bytes), c_size_t), &
       int(mode, c_int), &
-      merge(1_c_int, 0_c_int, echo_disabled), &
+      int(echo_policy, c_int), &
       sys_errno &
     )
     if (apply_status /= 0_c_int) then
@@ -194,6 +203,28 @@ contains
     rows = int(rows_c)
     columns = int(columns_c)
   end subroutine posix_get_terminal_size
+
+  subroutine posix_get_fd_identity(fd, device_id, inode_id, status_code, status_message)
+    integer, intent(in) :: fd
+    integer(c_long_long), intent(out) :: device_id
+    integer(c_long_long), intent(out) :: inode_id
+    integer, intent(out) :: status_code
+    character(len=:), allocatable, intent(out) :: status_message
+    integer(c_int) :: identity_status
+    integer(c_int) :: sys_errno
+
+    device_id = 0_c_long_long
+    inode_id = 0_c_long_long
+    status_code = TERMIOS_POSIX_OK
+    status_message = ""
+    sys_errno = 0_c_int
+
+    identity_status = fgof_termios_get_fd_identity_c(int(fd, c_int), device_id, inode_id, sys_errno)
+    if (identity_status /= 0_c_int) then
+      status_code = TERMIOS_POSIX_CAPTURE_FAILED
+      status_message = errno_message("terminal identity capture failed", int(sys_errno))
+    end if
+  end subroutine posix_get_fd_identity
 
   function errno_message(prefix, errnum) result(message)
     character(len=*), intent(in) :: prefix

@@ -8,8 +8,10 @@ module fgof_termios
     TERMIOS_POSIX_SIZE_FAILED, &
     posix_apply_state, &
     posix_capture_state, &
+    posix_get_fd_identity, &
     posix_get_terminal_size, &
     posix_restore_state
+  use, intrinsic :: iso_c_binding, only : c_long_long
   use fgof_termios_types, only : &
     FGOF_TERMIOS_ERR_APPLY_FAILED, &
     FGOF_TERMIOS_ERR_CAPTURE_FAILED, &
@@ -26,6 +28,10 @@ module fgof_termios
   implicit none
   private
 
+  integer, parameter :: ECHO_POLICY_DEFAULT = 0
+  integer, parameter :: ECHO_POLICY_DISABLED = 1
+  integer, parameter :: ECHO_POLICY_ENABLED = 2
+
   public :: bind_guard
   public :: enter_cbreak_mode
   public :: enter_raw_mode
@@ -41,13 +47,19 @@ contains
     type(termios_guard) :: previous_guard
     integer, intent(in), optional :: fd
     integer :: capture_status
+    integer :: identity_status
     integer :: restore_status
     logical :: tty_ready
     character(len=:), allocatable :: capture_message
+    character(len=:), allocatable :: identity_message
     character(len=:), allocatable :: restore_message
 
     previous_guard = guard
     if (previous_guard%bound .and. previous_guard%restore_needed .and. previous_guard%snapshot_captured) then
+      if (.not. verify_guard_identity(previous_guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, "terminal state restore failed")) then
+        guard = previous_guard
+        return
+      end if
       call posix_restore_state(previous_guard%fd, previous_guard%captured_state, restore_status, restore_message)
       if (restore_status == TERMIOS_POSIX_RESTORE_FAILED) then
         guard = previous_guard
@@ -84,8 +96,15 @@ contains
       return
     end select
 
+    call posix_get_fd_identity(guard%fd, guard%bound_device_id, guard%bound_inode_id, identity_status, identity_message)
+    if (identity_status /= TERMIOS_POSIX_OK) then
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_CAPTURE_FAILED, identity_message)
+      return
+    end if
+
     guard%bound = .true.
     guard%snapshot_captured = allocated(guard%captured_state) .and. size(guard%captured_state) > 0
+    guard%identity_captured = .true.
     call clear_guard_error(guard)
   end subroutine bind_guard
 
@@ -93,28 +112,28 @@ contains
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    call apply_guard_state(guard, FGOF_TERMIOS_MODE_RAW, guard%echo_disabled)
+    call apply_guard_state(guard, FGOF_TERMIOS_MODE_RAW, guard%echo_overridden, guard%echo_disabled)
   end subroutine enter_raw_mode
 
   subroutine enter_cbreak_mode(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    call apply_guard_state(guard, FGOF_TERMIOS_MODE_CBREAK, guard%echo_disabled)
+    call apply_guard_state(guard, FGOF_TERMIOS_MODE_CBREAK, guard%echo_overridden, guard%echo_disabled)
   end subroutine enter_cbreak_mode
 
   subroutine disable_echo(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    call apply_guard_state(guard, guard%active_mode, .true.)
+    call apply_guard_state(guard, guard%active_mode, .true., .true.)
   end subroutine disable_echo
 
   subroutine enable_echo(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    call apply_guard_state(guard, guard%active_mode, .false.)
+    call apply_guard_state(guard, guard%active_mode, .true., .false.)
   end subroutine enable_echo
 
   subroutine restore_guard(guard)
@@ -137,6 +156,8 @@ contains
       return
     end if
 
+    if (.not. verify_guard_identity(guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, "terminal state restore failed")) return
+
     call posix_restore_state(guard%fd, guard%captured_state, restore_status, restore_message)
     if (restore_status == TERMIOS_POSIX_RESTORE_FAILED) then
       call set_guard_error(guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, restore_message)
@@ -145,6 +166,7 @@ contains
 
     guard%active_mode = FGOF_TERMIOS_MODE_NONE
     guard%restore_needed = .false.
+    guard%echo_overridden = .false.
     guard%echo_disabled = .false.
     call clear_guard_error(guard)
   end subroutine restore_guard
@@ -193,24 +215,67 @@ contains
     is_ready = .true.
   end function ensure_bound
 
-  subroutine apply_guard_state(guard, target_mode, target_echo_disabled)
+  subroutine apply_guard_state(guard, target_mode, echo_is_overridden, target_echo_disabled)
     type(termios_guard), intent(inout) :: guard
     integer, intent(in) :: target_mode
+    logical, intent(in) :: echo_is_overridden
     logical, intent(in) :: target_echo_disabled
     integer :: apply_status
+    integer :: echo_policy
     character(len=:), allocatable :: apply_message
 
-    call posix_apply_state(guard%fd, guard%captured_state, target_mode, target_echo_disabled, apply_status, apply_message)
+    if (.not. verify_guard_identity(guard, FGOF_TERMIOS_ERR_APPLY_FAILED, "terminal mode apply failed")) return
+
+    echo_policy = ECHO_POLICY_DEFAULT
+    if (echo_is_overridden) then
+      if (target_echo_disabled) then
+        echo_policy = ECHO_POLICY_DISABLED
+      else
+        echo_policy = ECHO_POLICY_ENABLED
+      end if
+    end if
+
+    call posix_apply_state(guard%fd, guard%captured_state, target_mode, echo_policy, apply_status, apply_message)
     if (apply_status == TERMIOS_POSIX_APPLY_FAILED) then
       call set_guard_error(guard, FGOF_TERMIOS_ERR_APPLY_FAILED, apply_message)
       return
     end if
 
     guard%active_mode = target_mode
+    guard%echo_overridden = echo_is_overridden
     guard%echo_disabled = target_echo_disabled
-    guard%restore_needed = (target_mode /= FGOF_TERMIOS_MODE_NONE) .or. target_echo_disabled
+    guard%restore_needed = (target_mode /= FGOF_TERMIOS_MODE_NONE) .or. echo_is_overridden
     call clear_guard_error(guard)
   end subroutine apply_guard_state
+
+  logical function verify_guard_identity(guard, error_code, operation_prefix) result(is_valid)
+    type(termios_guard), intent(inout) :: guard
+    integer, intent(in) :: error_code
+    character(len=*), intent(in) :: operation_prefix
+    integer :: identity_status
+    integer(c_long_long) :: device_id
+    integer(c_long_long) :: inode_id
+    character(len=:), allocatable :: identity_message
+
+    is_valid = .false.
+    if (.not. guard%identity_captured) then
+      call set_guard_error(guard, error_code, trim(operation_prefix) // " (missing terminal identity)")
+      return
+    end if
+
+    call posix_get_fd_identity(guard%fd, device_id, inode_id, identity_status, identity_message)
+    if (identity_status /= TERMIOS_POSIX_OK) then
+      call set_guard_error(guard, error_code, trim(operation_prefix) // ": " // trim(identity_message))
+      return
+    end if
+
+    if (device_id /= guard%bound_device_id .or. inode_id /= guard%bound_inode_id) then
+      call set_guard_error(guard, error_code, trim(operation_prefix) // " (fd no longer refers to the original terminal)")
+      return
+    end if
+
+    is_valid = .true.
+  end function verify_guard_identity
 
   subroutine clear_guard_error(guard)
     type(termios_guard), intent(inout) :: guard
