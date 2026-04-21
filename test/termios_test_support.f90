@@ -8,6 +8,7 @@ module termios_test_support
   public :: open_test_pipe
   public :: open_test_pty
   public :: seed_test_tty_defaults
+  public :: set_test_terminal_size
 
   interface
     integer(c_int) function fgof_termios_open_test_pty_c(master_fd, slave_fd, sys_errno) bind(C, name="fgof_termios_open_test_pty")
@@ -46,6 +47,14 @@ module termios_test_support
       integer(c_int), intent(out) :: vtime
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_test_read_state_c
+
+    integer(c_int) function fgof_termios_test_set_size_c(fd, rows, columns, sys_errno) bind(C, name="fgof_termios_test_set_size")
+      import :: c_int
+      integer(c_int), value :: fd
+      integer(c_int), value :: rows
+      integer(c_int), value :: columns
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_test_set_size_c
   end interface
 
 contains
@@ -137,4 +146,17 @@ contains
     if (int(vmin_value) /= vmin) error stop trim(message) // ": wrong vmin"
     if (int(vtime_value) /= vtime) error stop trim(message) // ": wrong vtime"
   end subroutine expect_state
+
+  subroutine set_test_terminal_size(fd, rows, columns)
+    integer, intent(in) :: fd
+    integer, intent(in) :: rows
+    integer, intent(in) :: columns
+    integer(c_int) :: sys_errno
+    integer(c_int) :: status
+
+    status = fgof_termios_test_set_size_c(int(fd, c_int), int(rows, c_int), int(columns, c_int), sys_errno)
+    if (status /= 0_c_int) then
+      error stop "failed to set test terminal size"
+    end if
+  end subroutine set_test_terminal_size
 end module termios_test_support
