@@ -105,11 +105,10 @@ contains
     call bind_guard(guard, first_slave_fd)
     call enter_raw_mode(guard)
     call disable_echo(guard)
-    first_bound_fd = first_slave_fd
-    call close_fd(first_slave_fd)
-
     call open_test_pty(second_master_fd, second_slave_fd)
     call seed_test_tty_defaults(second_slave_fd)
+    first_bound_fd = first_slave_fd
+    call close_fd(first_slave_fd)
     call bind_guard(guard, second_slave_fd)
 
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_RESTORE_FAILED) error stop "rebind should fail if the old tty cannot be restored"

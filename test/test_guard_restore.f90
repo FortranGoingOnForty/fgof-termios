@@ -11,6 +11,7 @@ program test_guard_restore
 
   call test_restore_resets_state()
   call test_restore_is_idempotent()
+  call test_restore_without_pending_changes_is_noop()
   call test_rebind_resets_state()
   call test_restore_failure_preserves_requested_state()
 
@@ -57,6 +58,22 @@ contains
     call close_fd(slave_fd)
     call close_fd(master_fd)
   end subroutine test_restore_is_idempotent
+
+  subroutine test_restore_without_pending_changes_is_noop()
+    type(termios_guard) :: guard
+    integer :: master_fd
+    integer :: slave_fd
+
+    call open_test_pty(master_fd, slave_fd)
+    call seed_test_tty_defaults(slave_fd)
+    call bind_guard(guard, slave_fd)
+    call close_fd(slave_fd)
+    call restore_guard(guard)
+
+    if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "restore without pending changes should be a no-op"
+    if (guard%restore_needed) error stop "restore without pending changes should keep restore-needed false"
+    call close_fd(master_fd)
+  end subroutine test_restore_without_pending_changes_is_noop
 
   subroutine test_rebind_resets_state()
     type(termios_guard) :: guard
