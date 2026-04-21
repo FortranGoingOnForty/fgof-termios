@@ -1,7 +1,10 @@
 module fgof_termios
+  use fgof_termios_posix, only : TERMIOS_POSIX_CAPTURE_FAILED, TERMIOS_POSIX_NOT_TTY, TERMIOS_POSIX_OK, posix_capture_state
   use fgof_termios_types, only : &
+    FGOF_TERMIOS_ERR_CAPTURE_FAILED, &
     FGOF_TERMIOS_ERR_INVALID_FD, &
     FGOF_TERMIOS_ERR_NONE, &
+    FGOF_TERMIOS_ERR_NOT_A_TTY, &
     FGOF_TERMIOS_ERR_UNBOUND_GUARD, &
     FGOF_TERMIOS_MODE_CBREAK, &
     FGOF_TERMIOS_MODE_NONE, &
@@ -23,6 +26,9 @@ contains
   subroutine bind_guard(guard, fd)
     type(termios_guard), intent(inout) :: guard
     integer, intent(in), optional :: fd
+    integer :: capture_status
+    logical :: tty_ready
+    character(len=:), allocatable :: capture_message
 
     guard = termios_guard()
     if (present(fd)) then
@@ -36,7 +42,24 @@ contains
       return
     end if
 
+    call posix_capture_state(guard%fd, guard%captured_state, tty_ready, capture_status, capture_message)
+    guard%tty = tty_ready
+    select case (capture_status)
+    case (TERMIOS_POSIX_OK)
+      continue
+    case (TERMIOS_POSIX_NOT_TTY)
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_NOT_A_TTY, capture_message)
+      return
+    case (TERMIOS_POSIX_CAPTURE_FAILED)
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_CAPTURE_FAILED, capture_message)
+      return
+    case default
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_CAPTURE_FAILED, "terminal state capture failed")
+      return
+    end select
+
     guard%bound = .true.
+    guard%snapshot_captured = allocated(guard%captured_state) .and. size(guard%captured_state) > 0
     call clear_guard_error(guard)
   end subroutine bind_guard
 
@@ -89,7 +112,6 @@ contains
     end if
 
     guard%active_mode = FGOF_TERMIOS_MODE_NONE
-    guard%snapshot_captured = .false.
     guard%restore_needed = .false.
     guard%echo_disabled = .false.
     call clear_guard_error(guard)
