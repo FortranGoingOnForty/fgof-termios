@@ -1,5 +1,5 @@
 program test_example_flows
-  use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode, get_terminal_size, restore_guard
+  use fgof_termios, only : bind_guard, disable_echo, enter_cbreak_mode, get_terminal_size, restore_guard
   use fgof_termios_types, only : FGOF_TERMIOS_ERR_NONE, terminal_size, termios_guard
   use termios_test_support, only : close_fd, expect_state, open_test_pty, seed_test_tty_defaults, set_test_terminal_size
   implicit none
@@ -26,10 +26,10 @@ contains
     if (size_info%rows /= 55) error stop "example flow should preserve the seeded row count"
     if (size_info%columns /= 144) error stop "example flow should preserve the seeded column count"
 
-    call enter_raw_mode(guard)
+    call enter_cbreak_mode(guard)
     call disable_echo(guard)
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "mode changes should succeed in example flow"
-    call expect_state(slave_fd, .false., .false., .false., 1, 0, "example flow should enter raw mode with echo disabled")
+    call expect_state(slave_fd, .false., .false., .true., 1, 0, "example flow should enter cbreak mode with echo disabled")
 
     call restore_guard(guard)
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "restore should succeed in example flow"
