@@ -4,6 +4,7 @@ program test_guard_restore
     FGOF_TERMIOS_ERR_NONE, &
     FGOF_TERMIOS_MODE_NONE, &
     termios_guard
+  use termios_test_support, only : close_fd, open_test_pty
   implicit none
 
   call test_restore_resets_state()
@@ -14,44 +15,66 @@ contains
 
   subroutine test_restore_resets_state()
     type(termios_guard) :: guard
+    integer :: master_fd
+    integer :: slave_fd
 
-    call bind_guard(guard)
+    call open_test_pty(master_fd, slave_fd)
+    call bind_guard(guard, slave_fd)
     call enter_raw_mode(guard)
     call disable_echo(guard)
     call restore_guard(guard)
 
     if (guard%active_mode /= FGOF_TERMIOS_MODE_NONE) error stop "restore should clear the active mode"
-    if (guard%snapshot_captured) error stop "restore should clear the snapshot marker"
+    if (.not. guard%snapshot_captured) error stop "restore should preserve the captured snapshot for later reuse"
     if (guard%restore_needed) error stop "restore should clear the restore-needed flag"
     if (guard%echo_disabled) error stop "restore should clear echo-disabled state"
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "restore should leave the guard error-free"
+    call close_fd(slave_fd)
+    call close_fd(master_fd)
   end subroutine test_restore_resets_state
 
   subroutine test_restore_is_idempotent()
     type(termios_guard) :: guard
+    integer :: master_fd
+    integer :: slave_fd
 
     call restore_guard(guard)
-    call bind_guard(guard)
+    call open_test_pty(master_fd, slave_fd)
+    call bind_guard(guard, slave_fd)
     call restore_guard(guard)
     call restore_guard(guard)
 
     if (guard%active_mode /= FGOF_TERMIOS_MODE_NONE) error stop "repeated restore should remain safe"
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "repeated restore should not create an error"
+    if (.not. guard%snapshot_captured) error stop "repeated restore should preserve the original snapshot"
+    call close_fd(slave_fd)
+    call close_fd(master_fd)
   end subroutine test_restore_is_idempotent
 
   subroutine test_rebind_resets_state()
     type(termios_guard) :: guard
+    integer :: first_master_fd
+    integer :: first_slave_fd
+    integer :: second_master_fd
+    integer :: second_slave_fd
 
-    call bind_guard(guard)
+    call open_test_pty(first_master_fd, first_slave_fd)
+    call bind_guard(guard, first_slave_fd)
     call enter_raw_mode(guard)
     call disable_echo(guard)
-    call bind_guard(guard, 3)
+    call open_test_pty(second_master_fd, second_slave_fd)
+    call bind_guard(guard, second_slave_fd)
 
     if (.not. guard%bound) error stop "rebind should keep the guard bound"
-    if (guard%fd /= 3) error stop "rebind should replace the bound fd"
+    if (.not. guard%tty) error stop "rebind should keep the guard tty-backed"
+    if (guard%fd /= second_slave_fd) error stop "rebind should replace the bound fd"
     if (guard%active_mode /= FGOF_TERMIOS_MODE_NONE) error stop "rebind should reset the active mode"
-    if (guard%snapshot_captured) error stop "rebind should reset the snapshot marker"
+    if (.not. guard%snapshot_captured) error stop "rebind should recapture the original snapshot"
     if (guard%restore_needed) error stop "rebind should clear restore-needed state"
     if (guard%echo_disabled) error stop "rebind should clear echo-disabled state"
+    call close_fd(second_slave_fd)
+    call close_fd(second_master_fd)
+    call close_fd(first_slave_fd)
+    call close_fd(first_master_fd)
   end subroutine test_rebind_resets_state
 end program test_guard_restore

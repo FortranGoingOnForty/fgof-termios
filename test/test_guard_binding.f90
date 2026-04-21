@@ -1,37 +1,39 @@
 program test_guard_binding
   use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode
   use fgof_termios_types, only : &
+    FGOF_TERMIOS_ERR_CAPTURE_FAILED, &
     FGOF_TERMIOS_ERR_INVALID_FD, &
     FGOF_TERMIOS_ERR_NONE, &
+    FGOF_TERMIOS_ERR_NOT_A_TTY, &
     FGOF_TERMIOS_ERR_UNBOUND_GUARD, &
-    FGOF_TERMIOS_MODE_NONE, &
     termios_guard
+  use termios_test_support, only : close_fd, open_test_pipe, open_test_pty
   implicit none
 
-  call test_default_bind()
-  call test_explicit_bind()
+  call test_tty_bind()
   call test_invalid_fd()
+  call test_non_tty_fd()
   call test_unbound_error()
 
 contains
 
-  subroutine test_default_bind()
+  subroutine test_tty_bind()
     type(termios_guard) :: guard
+    integer :: master_fd
+    integer :: slave_fd
 
-    call bind_guard(guard)
-    if (.not. guard%bound) error stop "default bind should succeed"
-    if (guard%fd /= 0) error stop "default bind should use stdin fd"
-    if (guard%active_mode /= FGOF_TERMIOS_MODE_NONE) error stop "fresh guard should start in no mode"
+    call open_test_pty(master_fd, slave_fd)
+    call bind_guard(guard, slave_fd)
+    if (.not. guard%bound) error stop "tty bind should succeed"
+    if (.not. guard%tty) error stop "tty bind should mark the guard as tty-backed"
+    if (guard%fd /= slave_fd) error stop "tty bind should preserve the chosen fd"
+    if (.not. guard%snapshot_captured) error stop "tty bind should capture the original terminal state"
+    if (.not. allocated(guard%captured_state)) error stop "tty bind should store the captured state"
+    if (size(guard%captured_state) <= 0) error stop "tty bind should capture a nonempty state buffer"
     if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "successful bind should clear errors"
-  end subroutine test_default_bind
-
-  subroutine test_explicit_bind()
-    type(termios_guard) :: guard
-
-    call bind_guard(guard, 9)
-    if (.not. guard%bound) error stop "explicit bind should succeed"
-    if (guard%fd /= 9) error stop "explicit bind should preserve fd"
-  end subroutine test_explicit_bind
+    call close_fd(slave_fd)
+    call close_fd(master_fd)
+  end subroutine test_tty_bind
 
   subroutine test_invalid_fd()
     type(termios_guard) :: guard
@@ -42,6 +44,23 @@ contains
     if (.not. allocated(guard%last_error_message)) error stop "invalid fd should preserve an error message"
     if (len(guard%last_error_message) == 0) error stop "invalid fd error message should not be empty"
   end subroutine test_invalid_fd
+
+  subroutine test_non_tty_fd()
+    type(termios_guard) :: guard
+    integer :: read_fd
+    integer :: write_fd
+
+    call open_test_pipe(read_fd, write_fd)
+    call bind_guard(guard, read_fd)
+    if (guard%bound) error stop "non-tty bind should fail cleanly"
+    if (guard%tty) error stop "non-tty bind should not mark the guard as tty-backed"
+    if (guard%last_error_code /= FGOF_TERMIOS_ERR_NOT_A_TTY) error stop "non-tty bind should surface the not-a-tty error"
+    if (allocated(guard%captured_state)) then
+      if (size(guard%captured_state) /= 0) error stop "non-tty bind should not preserve a captured state"
+    end if
+    call close_fd(write_fd)
+    call close_fd(read_fd)
+  end subroutine test_non_tty_fd
 
   subroutine test_unbound_error()
     type(termios_guard) :: guard
