@@ -6,8 +6,12 @@ module fgof_termios_posix
   integer, parameter, public :: TERMIOS_POSIX_OK = 0
   integer, parameter, public :: TERMIOS_POSIX_NOT_TTY = 1
   integer, parameter, public :: TERMIOS_POSIX_CAPTURE_FAILED = 2
+  integer, parameter, public :: TERMIOS_POSIX_APPLY_FAILED = 3
+  integer, parameter, public :: TERMIOS_POSIX_RESTORE_FAILED = 4
 
+  public :: posix_apply_state
   public :: posix_capture_state
+  public :: posix_restore_state
 
   interface
     integer(c_int) function fgof_termios_is_tty_c(fd) bind(C, name="fgof_termios_is_tty")
@@ -26,6 +30,24 @@ module fgof_termios_posix
       integer(c_size_t), value :: buffer_len
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_capture_state_c
+
+    integer(c_int) function fgof_termios_apply_state_c(fd, snapshot, snapshot_len, mode, echo_disabled, sys_errno) bind(C, name="fgof_termios_apply_state")
+      import :: c_int, c_signed_char, c_size_t
+      integer(c_int), value :: fd
+      integer(c_signed_char), intent(in) :: snapshot(*)
+      integer(c_size_t), value :: snapshot_len
+      integer(c_int), value :: mode
+      integer(c_int), value :: echo_disabled
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_apply_state_c
+
+    integer(c_int) function fgof_termios_restore_state_c(fd, snapshot, snapshot_len, sys_errno) bind(C, name="fgof_termios_restore_state")
+      import :: c_int, c_signed_char, c_size_t
+      integer(c_int), value :: fd
+      integer(c_signed_char), intent(in) :: snapshot(*)
+      integer(c_size_t), value :: snapshot_len
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_restore_state_c
   end interface
 
 contains
@@ -71,6 +93,58 @@ contains
       return
     end if
   end subroutine posix_capture_state
+
+  subroutine posix_apply_state(fd, state_bytes, mode, echo_disabled, status_code, status_message)
+    integer, intent(in) :: fd
+    integer(c_signed_char), intent(in) :: state_bytes(:)
+    integer, intent(in) :: mode
+    logical, intent(in) :: echo_disabled
+    integer, intent(out) :: status_code
+    character(len=:), allocatable, intent(out) :: status_message
+    integer(c_int) :: apply_status
+    integer(c_int) :: sys_errno
+
+    status_code = TERMIOS_POSIX_OK
+    status_message = ""
+    sys_errno = 0_c_int
+
+    apply_status = fgof_termios_apply_state_c( &
+      int(fd, c_int), &
+      state_bytes, &
+      int(size(state_bytes), c_size_t), &
+      int(mode, c_int), &
+      merge(1_c_int, 0_c_int, echo_disabled), &
+      sys_errno &
+    )
+    if (apply_status /= 0_c_int) then
+      status_code = TERMIOS_POSIX_APPLY_FAILED
+      status_message = errno_message("terminal mode apply failed", int(sys_errno))
+    end if
+  end subroutine posix_apply_state
+
+  subroutine posix_restore_state(fd, state_bytes, status_code, status_message)
+    integer, intent(in) :: fd
+    integer(c_signed_char), intent(in) :: state_bytes(:)
+    integer, intent(out) :: status_code
+    character(len=:), allocatable, intent(out) :: status_message
+    integer(c_int) :: restore_status
+    integer(c_int) :: sys_errno
+
+    status_code = TERMIOS_POSIX_OK
+    status_message = ""
+    sys_errno = 0_c_int
+
+    restore_status = fgof_termios_restore_state_c( &
+      int(fd, c_int), &
+      state_bytes, &
+      int(size(state_bytes), c_size_t), &
+      sys_errno &
+    )
+    if (restore_status /= 0_c_int) then
+      status_code = TERMIOS_POSIX_RESTORE_FAILED
+      status_message = errno_message("terminal state restore failed", int(sys_errno))
+    end if
+  end subroutine posix_restore_state
 
   function errno_message(prefix, errnum) result(message)
     character(len=*), intent(in) :: prefix

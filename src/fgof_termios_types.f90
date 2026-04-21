@@ -7,6 +7,8 @@ module fgof_termios_types
   public :: FGOF_TERMIOS_ERR_INVALID_FD
   public :: FGOF_TERMIOS_ERR_NOT_A_TTY
   public :: FGOF_TERMIOS_ERR_CAPTURE_FAILED
+  public :: FGOF_TERMIOS_ERR_APPLY_FAILED
+  public :: FGOF_TERMIOS_ERR_RESTORE_FAILED
   public :: FGOF_TERMIOS_ERR_UNBOUND_GUARD
   public :: FGOF_TERMIOS_MODE_NONE
   public :: FGOF_TERMIOS_MODE_RAW
@@ -18,7 +20,9 @@ module fgof_termios_types
   integer, parameter :: FGOF_TERMIOS_ERR_INVALID_FD = 1
   integer, parameter :: FGOF_TERMIOS_ERR_NOT_A_TTY = 2
   integer, parameter :: FGOF_TERMIOS_ERR_CAPTURE_FAILED = 3
-  integer, parameter :: FGOF_TERMIOS_ERR_UNBOUND_GUARD = 4
+  integer, parameter :: FGOF_TERMIOS_ERR_APPLY_FAILED = 4
+  integer, parameter :: FGOF_TERMIOS_ERR_RESTORE_FAILED = 5
+  integer, parameter :: FGOF_TERMIOS_ERR_UNBOUND_GUARD = 6
 
   integer, parameter :: FGOF_TERMIOS_MODE_NONE = 0
   integer, parameter :: FGOF_TERMIOS_MODE_RAW = 1

@@ -1,10 +1,20 @@
 module fgof_termios
-  use fgof_termios_posix, only : TERMIOS_POSIX_CAPTURE_FAILED, TERMIOS_POSIX_NOT_TTY, TERMIOS_POSIX_OK, posix_capture_state
+  use fgof_termios_posix, only : &
+    TERMIOS_POSIX_APPLY_FAILED, &
+    TERMIOS_POSIX_CAPTURE_FAILED, &
+    TERMIOS_POSIX_NOT_TTY, &
+    TERMIOS_POSIX_OK, &
+    TERMIOS_POSIX_RESTORE_FAILED, &
+    posix_apply_state, &
+    posix_capture_state, &
+    posix_restore_state
   use fgof_termios_types, only : &
+    FGOF_TERMIOS_ERR_APPLY_FAILED, &
     FGOF_TERMIOS_ERR_CAPTURE_FAILED, &
     FGOF_TERMIOS_ERR_INVALID_FD, &
     FGOF_TERMIOS_ERR_NONE, &
     FGOF_TERMIOS_ERR_NOT_A_TTY, &
+    FGOF_TERMIOS_ERR_RESTORE_FAILED, &
     FGOF_TERMIOS_ERR_UNBOUND_GUARD, &
     FGOF_TERMIOS_MODE_CBREAK, &
     FGOF_TERMIOS_MODE_NONE, &
@@ -67,47 +77,48 @@ contains
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    guard%snapshot_captured = .true.
-    guard%restore_needed = .true.
-    guard%active_mode = FGOF_TERMIOS_MODE_RAW
-    call clear_guard_error(guard)
+    call apply_guard_state(guard, FGOF_TERMIOS_MODE_RAW, guard%echo_disabled)
   end subroutine enter_raw_mode
 
   subroutine enter_cbreak_mode(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    guard%snapshot_captured = .true.
-    guard%restore_needed = .true.
-    guard%active_mode = FGOF_TERMIOS_MODE_CBREAK
-    call clear_guard_error(guard)
+    call apply_guard_state(guard, FGOF_TERMIOS_MODE_CBREAK, guard%echo_disabled)
   end subroutine enter_cbreak_mode
 
   subroutine disable_echo(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    guard%snapshot_captured = .true.
-    guard%restore_needed = .true.
-    guard%echo_disabled = .true.
-    call clear_guard_error(guard)
+    call apply_guard_state(guard, guard%active_mode, .true.)
   end subroutine disable_echo
 
   subroutine enable_echo(guard)
     type(termios_guard), intent(inout) :: guard
 
     if (.not. ensure_bound(guard)) return
-    guard%snapshot_captured = .true.
-    guard%restore_needed = .true.
-    guard%echo_disabled = .false.
-    call clear_guard_error(guard)
+    call apply_guard_state(guard, guard%active_mode, .false.)
   end subroutine enable_echo
 
   subroutine restore_guard(guard)
     type(termios_guard), intent(inout) :: guard
+    integer :: restore_status
+    character(len=:), allocatable :: restore_message
 
     if (.not. guard%bound) then
       call clear_guard_error(guard)
+      return
+    end if
+
+    if (.not. guard%snapshot_captured) then
+      call clear_guard_error(guard)
+      return
+    end if
+
+    call posix_restore_state(guard%fd, guard%captured_state, restore_status, restore_message)
+    if (restore_status == TERMIOS_POSIX_RESTORE_FAILED) then
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, restore_message)
       return
     end if
 
@@ -128,6 +139,25 @@ contains
 
     is_ready = .true.
   end function ensure_bound
+
+  subroutine apply_guard_state(guard, target_mode, target_echo_disabled)
+    type(termios_guard), intent(inout) :: guard
+    integer, intent(in) :: target_mode
+    logical, intent(in) :: target_echo_disabled
+    integer :: apply_status
+    character(len=:), allocatable :: apply_message
+
+    call posix_apply_state(guard%fd, guard%captured_state, target_mode, target_echo_disabled, apply_status, apply_message)
+    if (apply_status == TERMIOS_POSIX_APPLY_FAILED) then
+      call set_guard_error(guard, FGOF_TERMIOS_ERR_APPLY_FAILED, apply_message)
+      return
+    end if
+
+    guard%active_mode = target_mode
+    guard%echo_disabled = target_echo_disabled
+    guard%restore_needed = (target_mode /= FGOF_TERMIOS_MODE_NONE) .or. target_echo_disabled
+    call clear_guard_error(guard)
+  end subroutine apply_guard_state
 
   subroutine clear_guard_error(guard)
     type(termios_guard), intent(inout) :: guard
