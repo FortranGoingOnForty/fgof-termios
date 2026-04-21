@@ -30,9 +30,10 @@ Implemented today:
 - stable guard state with explicit mode and error constants
 - explicit guard binding with default or chosen file descriptor
 - POSIX-backed tty validation and original terminal-state capture on bind
-- real raw mode, cbreak mode, and echo transitions applied through the captured snapshot
+- real raw mode, cbreak mode, and explicit echo transitions applied through the captured snapshot
 - idempotent restore semantics for guard lifecycle
 - safe rebinding that restores the previous tty before switching fds
+- stale-fd protection that rejects descriptor reuse instead of restoring into the wrong terminal
 - terminal-size queries from an explicit fd or default stdin
 - tracked `fpm` examples for restore-first and terminal-size flows
 - smoke-test coverage with CI wiring
@@ -72,9 +73,11 @@ Current public procedures:
 
 `get_terminal_size()` uses file descriptor `0` by default. Pass an explicit fd when your app is reading size from a PTY or a non-stdin terminal.
 
-If `bind_guard()` is called on a guard that still owes a restore, it restores the previous tty first and only switches to the new fd if that restore succeeds.
+If `bind_guard()` is called on a guard that still owes a restore, it restores the previous tty first and only switches to the new fd if that restore succeeds. Restore and apply operations also verify that the bound fd still refers to the original terminal, so stale descriptor reuse fails safely instead of mutating a different tty.
 
 `restore_guard()` is a no-op when no restore is pending, so callers can safely use it in straightforward cleanup paths.
+
+`enter_raw_mode()` uses the normal raw default of echo off. `enable_echo()` and `disable_echo()` are explicit overrides for the active mode, so callers can opt into raw-with-echo or cbreak-without-echo when they want that behavior.
 
 ## Quick Start
 
