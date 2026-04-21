@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -115,6 +116,26 @@ int fgof_termios_restore_state(int fd,
     return 0;
 }
 
+int fgof_termios_get_terminal_size(int fd,
+                                   int *rows,
+                                   int *columns,
+                                   int *sys_errno) {
+    struct winsize size;
+
+    *rows = 0;
+    *columns = 0;
+    *sys_errno = 0;
+
+    if (ioctl(fd, TIOCGWINSZ, &size) != 0) {
+        *sys_errno = errno;
+        return -1;
+    }
+
+    *rows = (int) size.ws_row;
+    *columns = (int) size.ws_col;
+    return 0;
+}
+
 int fgof_termios_open_test_pty(int *master_fd, int *slave_fd, int *sys_errno) {
     int master;
     int slave;
@@ -222,5 +243,25 @@ int fgof_termios_test_read_state(int fd,
     *signals_enabled = (state.c_lflag & ISIG) ? 1 : 0;
     *vmin = (int) state.c_cc[VMIN];
     *vtime = (int) state.c_cc[VTIME];
+    return 0;
+}
+
+int fgof_termios_test_set_size(int fd, int rows, int columns, int *sys_errno) {
+    struct winsize size;
+
+    *sys_errno = 0;
+    if (rows <= 0 || columns <= 0) {
+        *sys_errno = EINVAL;
+        return -1;
+    }
+
+    memset(&size, 0, sizeof(size));
+    size.ws_row = (unsigned short) rows;
+    size.ws_col = (unsigned short) columns;
+    if (ioctl(fd, TIOCSWINSZ, &size) != 0) {
+        *sys_errno = errno;
+        return -1;
+    }
+
     return 0;
 }

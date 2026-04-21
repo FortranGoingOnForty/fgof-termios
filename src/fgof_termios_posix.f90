@@ -8,9 +8,11 @@ module fgof_termios_posix
   integer, parameter, public :: TERMIOS_POSIX_CAPTURE_FAILED = 2
   integer, parameter, public :: TERMIOS_POSIX_APPLY_FAILED = 3
   integer, parameter, public :: TERMIOS_POSIX_RESTORE_FAILED = 4
+  integer, parameter, public :: TERMIOS_POSIX_SIZE_FAILED = 5
 
   public :: posix_apply_state
   public :: posix_capture_state
+  public :: posix_get_terminal_size
   public :: posix_restore_state
 
   interface
@@ -48,6 +50,14 @@ module fgof_termios_posix
       integer(c_size_t), value :: snapshot_len
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_restore_state_c
+
+    integer(c_int) function fgof_termios_get_terminal_size_c(fd, rows, columns, sys_errno) bind(C, name="fgof_termios_get_terminal_size")
+      import :: c_int
+      integer(c_int), value :: fd
+      integer(c_int), intent(out) :: rows
+      integer(c_int), intent(out) :: columns
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_get_terminal_size_c
   end interface
 
 contains
@@ -145,6 +155,45 @@ contains
       status_message = errno_message("terminal state restore failed", int(sys_errno))
     end if
   end subroutine posix_restore_state
+
+  subroutine posix_get_terminal_size(fd, rows, columns, tty_ready, status_code, status_message)
+    integer, intent(in) :: fd
+    integer, intent(out) :: rows
+    integer, intent(out) :: columns
+    logical, intent(out) :: tty_ready
+    integer, intent(out) :: status_code
+    character(len=:), allocatable, intent(out) :: status_message
+    integer(c_int) :: query_status
+    integer(c_int) :: sys_errno
+    integer(c_int) :: rows_c
+    integer(c_int) :: columns_c
+
+    rows = 0
+    columns = 0
+    tty_ready = .false.
+    status_code = TERMIOS_POSIX_OK
+    status_message = ""
+
+    if (fgof_termios_is_tty_c(int(fd, c_int)) == 0_c_int) then
+      status_code = TERMIOS_POSIX_NOT_TTY
+      status_message = "fd is not a tty"
+      return
+    end if
+    tty_ready = .true.
+
+    sys_errno = 0_c_int
+    rows_c = 0_c_int
+    columns_c = 0_c_int
+    query_status = fgof_termios_get_terminal_size_c(int(fd, c_int), rows_c, columns_c, sys_errno)
+    if (query_status /= 0_c_int) then
+      status_code = TERMIOS_POSIX_SIZE_FAILED
+      status_message = errno_message("terminal size query failed", int(sys_errno))
+      return
+    end if
+
+    rows = int(rows_c)
+    columns = int(columns_c)
+  end subroutine posix_get_terminal_size
 
   function errno_message(prefix, errnum) result(message)
     character(len=*), intent(in) :: prefix

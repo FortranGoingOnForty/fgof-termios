@@ -5,8 +5,10 @@ module fgof_termios
     TERMIOS_POSIX_NOT_TTY, &
     TERMIOS_POSIX_OK, &
     TERMIOS_POSIX_RESTORE_FAILED, &
+    TERMIOS_POSIX_SIZE_FAILED, &
     posix_apply_state, &
     posix_capture_state, &
+    posix_get_terminal_size, &
     posix_restore_state
   use fgof_termios_types, only : &
     FGOF_TERMIOS_ERR_APPLY_FAILED, &
@@ -29,6 +31,7 @@ module fgof_termios
   public :: enter_raw_mode
   public :: disable_echo
   public :: enable_echo
+  public :: get_terminal_size
   public :: restore_guard
 
 contains
@@ -127,6 +130,38 @@ contains
     guard%echo_disabled = .false.
     call clear_guard_error(guard)
   end subroutine restore_guard
+
+  function get_terminal_size(fd) result(size_info)
+    type(terminal_size) :: size_info
+    integer, intent(in), optional :: fd
+    integer :: query_status
+    integer :: rows
+    integer :: columns
+    integer :: selected_fd
+    logical :: tty_ready
+    character(len=:), allocatable :: query_message
+
+    size_info = terminal_size()
+    if (present(fd)) then
+      selected_fd = fd
+    else
+      selected_fd = 0
+    end if
+
+    if (selected_fd < 0) return
+
+    call posix_get_terminal_size(selected_fd, rows, columns, tty_ready, query_status, query_message)
+    select case (query_status)
+    case (TERMIOS_POSIX_OK)
+      size_info%rows = rows
+      size_info%columns = columns
+      size_info%valid = rows > 0 .and. columns > 0
+    case (TERMIOS_POSIX_NOT_TTY, TERMIOS_POSIX_SIZE_FAILED)
+      continue
+    case default
+      continue
+    end select
+  end function get_terminal_size
 
   logical function ensure_bound(guard) result(is_ready)
     type(termios_guard), intent(inout) :: guard
