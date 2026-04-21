@@ -7,11 +7,12 @@ program test_guard_modes
     FGOF_TERMIOS_MODE_NONE, &
     FGOF_TERMIOS_MODE_RAW, &
     termios_guard
-  use termios_test_support, only : close_fd, expect_state, open_test_pty, seed_test_tty_defaults
+  use termios_test_support, only : close_fd, expect_raw_profile, expect_state, open_test_pty, seed_test_tty_defaults
   implicit none
 
   call test_mode_switching()
   call test_echo_switching()
+  call test_enable_echo_overrides_raw_profile()
   call test_success_clears_error()
   call test_apply_failure_preserves_state()
 
@@ -31,6 +32,7 @@ contains
     if (.not. guard%snapshot_captured) error stop "raw mode should mark a captured snapshot"
     if (.not. guard%restore_needed) error stop "raw mode should require restore"
     call expect_state(slave_fd, .false., .false., .false., 1, 0, "raw mode should clear canonical, echo, and signals")
+    call expect_raw_profile(slave_fd, "raw mode should apply the full raw flag profile")
 
     call enter_cbreak_mode(guard)
     if (guard%active_mode /= FGOF_TERMIOS_MODE_CBREAK) error stop "cbreak mode should replace the active mode"
@@ -60,6 +62,23 @@ contains
     call close_fd(slave_fd)
     call close_fd(master_fd)
   end subroutine test_echo_switching
+
+  subroutine test_enable_echo_overrides_raw_profile()
+    type(termios_guard) :: guard
+    integer :: master_fd
+    integer :: slave_fd
+
+    call open_test_pty(master_fd, slave_fd)
+    call seed_test_tty_defaults(slave_fd)
+    call bind_guard(guard, slave_fd)
+    call enter_raw_mode(guard)
+    call enable_echo(guard)
+
+    if (guard%echo_disabled) error stop "enable_echo should clear the echo-disabled flag"
+    call expect_state(slave_fd, .false., .true., .false., 1, 0, "enable_echo should turn echo on even under raw mode")
+    call close_fd(slave_fd)
+    call close_fd(master_fd)
+  end subroutine test_enable_echo_overrides_raw_profile
 
   subroutine test_success_clears_error()
     type(termios_guard) :: guard

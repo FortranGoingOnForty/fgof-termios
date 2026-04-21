@@ -6,12 +6,13 @@ program test_guard_restore
     FGOF_TERMIOS_MODE_NONE, &
     FGOF_TERMIOS_MODE_RAW, &
     termios_guard
-  use termios_test_support, only : close_fd, expect_state, open_test_pty, seed_test_tty_defaults
+  use termios_test_support, only : close_fd, dup_fd_to, expect_state, open_test_pty, seed_test_tty_defaults
   implicit none
 
   call test_restore_resets_state()
   call test_restore_is_idempotent()
   call test_restore_without_pending_changes_is_noop()
+  call test_restore_reused_fd_is_rejected()
   call test_rebind_resets_state()
   call test_restore_failure_preserves_requested_state()
 
@@ -74,6 +75,36 @@ contains
     if (guard%restore_needed) error stop "restore without pending changes should keep restore-needed false"
     call close_fd(master_fd)
   end subroutine test_restore_without_pending_changes_is_noop
+
+  subroutine test_restore_reused_fd_is_rejected()
+    type(termios_guard) :: guard
+    integer :: first_bound_fd
+    integer :: first_master_fd
+    integer :: first_slave_fd
+    integer :: second_master_fd
+    integer :: second_slave_fd
+
+    call open_test_pty(first_master_fd, first_slave_fd)
+    call seed_test_tty_defaults(first_slave_fd)
+    call bind_guard(guard, first_slave_fd)
+    call enter_raw_mode(guard)
+    call disable_echo(guard)
+    first_bound_fd = first_slave_fd
+
+    call open_test_pty(second_master_fd, second_slave_fd)
+    call seed_test_tty_defaults(second_slave_fd)
+    call dup_fd_to(second_slave_fd, first_bound_fd)
+    call restore_guard(guard)
+
+    if (guard%last_error_code /= FGOF_TERMIOS_ERR_RESTORE_FAILED) error stop "restore should reject a reused fd"
+    if (guard%active_mode /= FGOF_TERMIOS_MODE_RAW) error stop "reused-fd restore failure should preserve the active mode"
+    if (.not. guard%restore_needed) error stop "reused-fd restore failure should preserve pending restore state"
+    call expect_state(first_bound_fd, .true., .true., .true., 1, 0, "reused-fd restore failure should not touch the replacement tty")
+    call close_fd(second_slave_fd)
+    call close_fd(first_slave_fd)
+    call close_fd(second_master_fd)
+    call close_fd(first_master_fd)
+  end subroutine test_restore_reused_fd_is_rejected
 
   subroutine test_rebind_resets_state()
     type(termios_guard) :: guard

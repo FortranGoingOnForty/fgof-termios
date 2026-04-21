@@ -4,7 +4,9 @@ module termios_test_support
   private
 
   public :: close_fd
+  public :: dup_fd_to
   public :: expect_state
+  public :: expect_raw_profile
   public :: open_test_pipe
   public :: open_test_pty
   public :: seed_test_tty_defaults
@@ -55,6 +57,20 @@ module termios_test_support
       integer(c_int), value :: columns
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_test_set_size_c
+
+    integer(c_int) function fgof_termios_test_raw_profile_ok_c(fd, matches, sys_errno) bind(C, name="fgof_termios_test_raw_profile_ok")
+      import :: c_int
+      integer(c_int), value :: fd
+      integer(c_int), intent(out) :: matches
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_test_raw_profile_ok_c
+
+    integer(c_int) function fgof_termios_test_dup_fd_c(source_fd, target_fd, sys_errno) bind(C, name="fgof_termios_test_dup_fd")
+      import :: c_int
+      integer(c_int), value :: source_fd
+      integer(c_int), value :: target_fd
+      integer(c_int), intent(out) :: sys_errno
+    end function fgof_termios_test_dup_fd_c
   end interface
 
 contains
@@ -159,4 +175,32 @@ contains
       error stop "failed to set test terminal size"
     end if
   end subroutine set_test_terminal_size
+
+  subroutine expect_raw_profile(fd, message)
+    integer, intent(in) :: fd
+    character(len=*), intent(in) :: message
+    integer(c_int) :: matches
+    integer(c_int) :: sys_errno
+    integer(c_int) :: status
+
+    status = fgof_termios_test_raw_profile_ok_c(int(fd, c_int), matches, sys_errno)
+    if (status /= 0_c_int) then
+      error stop trim(message) // ": failed to read raw-profile flags"
+    end if
+    if (matches == 0_c_int) then
+      error stop trim(message) // ": terminal does not match the raw profile"
+    end if
+  end subroutine expect_raw_profile
+
+  subroutine dup_fd_to(source_fd, target_fd)
+    integer, intent(in) :: source_fd
+    integer, intent(in) :: target_fd
+    integer(c_int) :: sys_errno
+    integer(c_int) :: status
+
+    status = fgof_termios_test_dup_fd_c(int(source_fd, c_int), int(target_fd, c_int), sys_errno)
+    if (status /= 0_c_int) then
+      error stop "failed to duplicate test fd"
+    end if
+  end subroutine dup_fd_to
 end module termios_test_support
