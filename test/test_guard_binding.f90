@@ -5,14 +5,17 @@ program test_guard_binding
     FGOF_TERMIOS_ERR_INVALID_FD, &
     FGOF_TERMIOS_ERR_NONE, &
     FGOF_TERMIOS_ERR_NOT_A_TTY, &
+    FGOF_TERMIOS_ERR_RESTORE_FAILED, &
     FGOF_TERMIOS_ERR_UNBOUND_GUARD, &
     termios_guard
-  use termios_test_support, only : close_fd, open_test_pipe, open_test_pty
+  use termios_test_support, only : close_fd, expect_state, open_test_pipe, open_test_pty, seed_test_tty_defaults
   implicit none
 
   call test_tty_bind()
   call test_invalid_fd()
   call test_non_tty_fd()
+  call test_rebind_restores_previous_tty()
+  call test_rebind_failure_preserves_original_guard()
   call test_unbound_error()
 
 contains
@@ -61,6 +64,62 @@ contains
     call close_fd(write_fd)
     call close_fd(read_fd)
   end subroutine test_non_tty_fd
+
+  subroutine test_rebind_restores_previous_tty()
+    type(termios_guard) :: guard
+    integer :: first_master_fd
+    integer :: first_slave_fd
+    integer :: second_master_fd
+    integer :: second_slave_fd
+
+    call open_test_pty(first_master_fd, first_slave_fd)
+    call seed_test_tty_defaults(first_slave_fd)
+    call bind_guard(guard, first_slave_fd)
+    call enter_raw_mode(guard)
+    call disable_echo(guard)
+
+    call open_test_pty(second_master_fd, second_slave_fd)
+    call seed_test_tty_defaults(second_slave_fd)
+    call bind_guard(guard, second_slave_fd)
+
+    if (guard%last_error_code /= FGOF_TERMIOS_ERR_NONE) error stop "rebind should succeed after restoring the old tty"
+    if (guard%fd /= second_slave_fd) error stop "rebind should switch the guard to the new fd"
+    call expect_state(first_slave_fd, .true., .true., .true., 1, 0, "rebind should restore the previous tty before switching")
+    call expect_state(second_slave_fd, .true., .true., .true., 1, 0, "rebind should not mutate the new tty during capture")
+    call close_fd(second_slave_fd)
+    call close_fd(second_master_fd)
+    call close_fd(first_slave_fd)
+    call close_fd(first_master_fd)
+  end subroutine test_rebind_restores_previous_tty
+
+  subroutine test_rebind_failure_preserves_original_guard()
+    type(termios_guard) :: guard
+    integer :: first_bound_fd
+    integer :: first_master_fd
+    integer :: first_slave_fd
+    integer :: second_master_fd
+    integer :: second_slave_fd
+
+    call open_test_pty(first_master_fd, first_slave_fd)
+    call seed_test_tty_defaults(first_slave_fd)
+    call bind_guard(guard, first_slave_fd)
+    call enter_raw_mode(guard)
+    call disable_echo(guard)
+    first_bound_fd = first_slave_fd
+    call close_fd(first_slave_fd)
+
+    call open_test_pty(second_master_fd, second_slave_fd)
+    call seed_test_tty_defaults(second_slave_fd)
+    call bind_guard(guard, second_slave_fd)
+
+    if (guard%last_error_code /= FGOF_TERMIOS_ERR_RESTORE_FAILED) error stop "rebind should fail if the old tty cannot be restored"
+    if (guard%fd /= first_bound_fd) error stop "failed rebind should preserve the original bound fd"
+    if (.not. guard%restore_needed) error stop "failed rebind should preserve pending restore state"
+    call expect_state(second_slave_fd, .true., .true., .true., 1, 0, "failed rebind should not touch the new tty")
+    call close_fd(second_slave_fd)
+    call close_fd(second_master_fd)
+    call close_fd(first_master_fd)
+  end subroutine test_rebind_failure_preserves_original_guard
 
   subroutine test_unbound_error()
     type(termios_guard) :: guard
