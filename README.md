@@ -27,8 +27,10 @@ Initial scaffold is in place.
 Implemented today:
 
 - public `fgof_termios` and `fgof_termios_types` modules
-- scaffold `termios_guard` and `terminal_size` types
-- guard lifecycle placeholders for raw mode, echo suppression, and restore
+- stable guard state with explicit mode and error constants
+- explicit guard binding with default or chosen file descriptor
+- idempotent restore semantics for guard lifecycle
+- public contract for raw mode, cbreak mode, and echo toggles
 - smoke-test coverage with CI wiring
 
 Still to implement:
@@ -59,27 +61,25 @@ Public types:
 Current public procedures:
 
 - `bind_guard`
-- `request_raw_mode`
-- `request_noecho`
+- `disable_echo`
+- `enable_echo`
+- `enter_cbreak_mode`
+- `enter_raw_mode`
 - `restore_guard`
-- `terminal_size_of`
 
 ## Quick Start
 
 ```fortran
 program demo_termios
-  use fgof_termios, only : bind_guard, request_noecho, request_raw_mode, restore_guard, terminal_size_of
-  use fgof_termios_types, only : terminal_size, termios_guard
+  use fgof_termios, only : bind_guard, disable_echo, enter_raw_mode, restore_guard
+  use fgof_termios_types, only : termios_guard
   implicit none
 
   type(termios_guard) :: guard
-  type(terminal_size) :: size
 
   call bind_guard(guard)
-  call request_raw_mode(guard)
-  call request_noecho(guard)
-  size = terminal_size_of(24, 80)
-  print "(I0,1X,I0)", size%rows, size%columns
+  call enter_raw_mode(guard)
+  call disable_echo(guard)
   call restore_guard(guard)
 end program demo_termios
 ```
@@ -101,7 +101,7 @@ That is the baseline verification command locally and in CI.
 
 - intended to stay independently versioned and releasable
 - focused on reusable terminal mode primitives, not a full TUI toolkit
-- the first release should solve safe raw or noecho mode transitions well before it grows broader terminal helpers
+- the first release should solve safe raw, cbreak, and echo transitions well before it grows broader terminal helpers
 - future `fgof-keys` should be able to depend on this package without inheriting PTY or line-editing policy
 
 ## License
