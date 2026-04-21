@@ -38,10 +38,23 @@ contains
 
   subroutine bind_guard(guard, fd)
     type(termios_guard), intent(inout) :: guard
+    type(termios_guard) :: previous_guard
     integer, intent(in), optional :: fd
     integer :: capture_status
+    integer :: restore_status
     logical :: tty_ready
     character(len=:), allocatable :: capture_message
+    character(len=:), allocatable :: restore_message
+
+    previous_guard = guard
+    if (previous_guard%bound .and. previous_guard%restore_needed .and. previous_guard%snapshot_captured) then
+      call posix_restore_state(previous_guard%fd, previous_guard%captured_state, restore_status, restore_message)
+      if (restore_status == TERMIOS_POSIX_RESTORE_FAILED) then
+        guard = previous_guard
+        call set_guard_error(guard, FGOF_TERMIOS_ERR_RESTORE_FAILED, restore_message)
+        return
+      end if
+    end if
 
     guard = termios_guard()
     if (present(fd)) then
