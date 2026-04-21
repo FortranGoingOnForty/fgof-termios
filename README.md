@@ -30,13 +30,12 @@ Implemented today:
 - stable guard state with explicit mode and error constants
 - explicit guard binding with default or chosen file descriptor
 - POSIX-backed tty validation and original terminal-state capture on bind
+- real raw mode, cbreak mode, and echo transitions applied through the captured snapshot
 - idempotent restore semantics for guard lifecycle
-- public contract for raw mode, cbreak mode, and echo toggles
 - smoke-test coverage with CI wiring
 
 Still to implement:
 
-- raw, cbreak, and echo mode transitions
 - terminal-size queries from real file descriptors
 - restore-on-failure and signal-safety hardening
 
