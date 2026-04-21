@@ -22,7 +22,7 @@ Future scope:
 
 ## Status
 
-Initial scaffold is in place.
+Core termios backend is in place.
 
 Implemented today:
 
@@ -32,12 +32,13 @@ Implemented today:
 - POSIX-backed tty validation and original terminal-state capture on bind
 - real raw mode, cbreak mode, and echo transitions applied through the captured snapshot
 - idempotent restore semantics for guard lifecycle
+- terminal-size queries from an explicit fd or default stdin
 - smoke-test coverage with CI wiring
 
 Still to implement:
 
-- terminal-size queries from real file descriptors
-- restore-on-failure and signal-safety hardening
+- signal-safety hardening
+- richer integration examples
 
 ## Why Use It
 
@@ -64,7 +65,10 @@ Current public procedures:
 - `enable_echo`
 - `enter_cbreak_mode`
 - `enter_raw_mode`
+- `get_terminal_size`
 - `restore_guard`
+
+`get_terminal_size()` uses file descriptor `0` by default. Pass an explicit fd when your app is reading size from a PTY or a non-stdin terminal.
 
 ## Quick Start
 
