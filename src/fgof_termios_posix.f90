@@ -26,7 +26,8 @@ module fgof_termios_posix
       import :: c_size_t
     end function fgof_termios_state_size_c
 
-    integer(c_int) function fgof_termios_capture_state_c(fd, buffer, buffer_len, sys_errno) bind(C, name="fgof_termios_capture_state")
+    integer(c_int) function fgof_termios_capture_state_c( &
+        fd, buffer, buffer_len, sys_errno) bind(C, name="fgof_termios_capture_state")
       import :: c_int, c_signed_char, c_size_t
       integer(c_int), value :: fd
       integer(c_signed_char), intent(out) :: buffer(*)
@@ -34,7 +35,8 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_capture_state_c
 
-    integer(c_int) function fgof_termios_apply_state_c(fd, snapshot, snapshot_len, mode, echo_policy, sys_errno) bind(C, name="fgof_termios_apply_state")
+    integer(c_int) function fgof_termios_apply_state_c( &
+        fd, snapshot, snapshot_len, mode, echo_policy, sys_errno) bind(C, name="fgof_termios_apply_state")
       import :: c_int, c_signed_char, c_size_t
       integer(c_int), value :: fd
       integer(c_signed_char), intent(in) :: snapshot(*)
@@ -44,7 +46,8 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_apply_state_c
 
-    integer(c_int) function fgof_termios_restore_state_c(fd, snapshot, snapshot_len, sys_errno) bind(C, name="fgof_termios_restore_state")
+    integer(c_int) function fgof_termios_restore_state_c( &
+        fd, snapshot, snapshot_len, sys_errno) bind(C, name="fgof_termios_restore_state")
       import :: c_int, c_signed_char, c_size_t
       integer(c_int), value :: fd
       integer(c_signed_char), intent(in) :: snapshot(*)
@@ -52,7 +55,8 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_restore_state_c
 
-    integer(c_int) function fgof_termios_get_terminal_size_c(fd, rows, columns, sys_errno) bind(C, name="fgof_termios_get_terminal_size")
+    integer(c_int) function fgof_termios_get_terminal_size_c( &
+        fd, rows, columns, sys_errno) bind(C, name="fgof_termios_get_terminal_size")
       import :: c_int
       integer(c_int), value :: fd
       integer(c_int), intent(out) :: rows
@@ -60,7 +64,8 @@ module fgof_termios_posix
       integer(c_int), intent(out) :: sys_errno
     end function fgof_termios_get_terminal_size_c
 
-    integer(c_int) function fgof_termios_get_fd_identity_c(fd, device_id, inode_id, sys_errno) bind(C, name="fgof_termios_get_fd_identity")
+    integer(c_int) function fgof_termios_get_fd_identity_c( &
+        fd, device_id, inode_id, sys_errno) bind(C, name="fgof_termios_get_fd_identity")
       import :: c_int, c_long_long
       integer(c_int), value :: fd
       integer(c_long_long), intent(out) :: device_id
